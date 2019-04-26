@@ -1,0 +1,171 @@
+<!doctype html>
+<meta charset=utf-8>
+<title>The effect value of a keyframe effect: Apply the interpolation procedure defined by the animation type</title>
+<link rel="help" href="https://drafts.csswg.org/web-animations/#the-effect-value-of-a-keyframe-animation-effect">
+<script src="/resources/testharness.js"></script>
+<script src="/resources/testharnessreport.js"></script>
+<script src="../../../css/support/legacy-property-animation-types.js"></script>
+<script src="../../../css/support/common-animation-types.js"></script>
+<script src="../../testcommon.js"></script>
+<script src="../../resources/property-to-idl.js"></script>
+<script src="../../resources/is-animatable-property.js"></script>
+<body>
+<div id="log"></div>
+<script>
+'use strict';
+
+// TODO: Drop ../animation-types/interpolation-per-property.html once this is
+// complete.
+
+// Sanity check the test definition
+test(t => {
+  for (const property in legacyCSSPropertyAnimationTypes) {
+    const idlName = propertyToIDL(property);
+    const { types } = legacyCSSPropertyAnimationTypes[property];
+
+    for (const typeElem of types) {
+      const { type, options } =
+        typeof typeElem === 'string' ? { type: typeElem } : typeElem;
+      assert_true(
+        animationTypes.has(type),
+        `Has an animation type definition for '${type}' (${property})`
+      );
+    }
+  }
+}, 'All properties have a defined animation type');
+
+for (const property in legacyCSSPropertyAnimationTypes) {
+  // TODO: Make sure this test suite fails is isAnimatableProperty returns
+  // false for _everything_.
+  if (!isAnimatableProperty(property)) {
+    continue;
+  }
+
+  const idlName = propertyToIDL(property);
+  const { types } = legacyCSSPropertyAnimationTypes[property];
+
+  // TODO: Factor the following loop into some generic function like:
+  //
+  //   test_web_animations_interpolation(t, property, types)
+  //
+  // Then ultimately we should end up with:
+  //
+  //   test_web_animations_interpolation(property, types)
+  //   test_web_animations_addition(property, types)
+  //   test_web_animations_accumulation(property, types)
+  //
+  // And:
+  //
+  //   test_web_animations_animation(property, types)
+  //   (which calls all of the above three)
+  //
+  // And finally:
+  //
+  //   test_animation_type(property, types)
+  //   --> test_css_transitions_animation
+  //   --> test_css_animations_animation
+  //   --> test_web_animations_animation
+  //       --> test_web_animations_interpolation
+  //       --> test_web_animations_addition
+  //       --> test_web_animations_accumulation
+  //
+  // Then, ultimately when someone writes the test suite for a new property,
+  // all they have to write in some cases is just:
+  //
+  //   test_animation_type('my-new-property', 'length');
+  //
+  // We need to be careful of the call to isAnimatableProperty inside
+  // test_web_animations_animation. In fact, that test should probably fail if
+  // isAnimatableProperty returns false (since if the author is calling
+  // test_animation_type they are assuming it will be animated).
+
+  for (const typeElem of types) {
+    const { type, options } =
+      typeof typeElem === 'string' ? { type: typeElem } : typeElem;
+
+    if (!animationTypes.has(type)) {
+      continue;
+    }
+
+    const typeDefinition = animationTypes.get(type)(options);
+    const compare = typeDefinition.compare || assert_equals;
+
+    for (const interval of typeDefinition.interpolation) {
+      test(t => {
+        // TODO: Make this call typeDefinition.setup if provided
+        const target = createDiv(t);
+
+        // TODO: Work out how to target pseudo elements for transitions
+        // CSS animations without relying on the Web Animations API
+        //
+        // Proably we should make setup return either an Element or an Element
+        // and a pseudo type pair.
+        //
+        // - In the Web Animations tests we'd jump through the same hoops as
+        //   getPseudo in order to create the right CSSPseudoElement.
+        // - In CSS animations/transitions, we'd have to setup the appropriate
+        //   declarations
+        //
+        // It could complicate things quite a bit, so it might be worth just
+        // special casing 'content' altogether.
+        const [targetElement, pseudoType] =
+          target instanceof CSSPseudoElement
+            ? [target.element, target.type]
+            : [target, undefined];
+        const computedStyle = getComputedStyle(targetElement, pseudoType);
+
+        const animation = target.animate(
+          {
+            [idlName]: [interval.from, interval.to],
+          },
+          { duration: 1000, fill: 'both' }
+        );
+
+        compare(
+          computedStyle.getPropertyValue(property),
+          interval.from,
+          `Value at start (${interval.from} -> ${interval.to})`
+        );
+
+        animation.currentTime = 250;
+        compare(
+          computedStyle.getPropertyValue(property),
+          interval['25%'],
+          `Value at 25% (${interval.from} -> ${interval.to})`
+        );
+
+        animation.finish();
+        compare(
+          computedStyle.getPropertyValue(property),
+          interval.to,
+          `Value at end (${interval.from} -> ${interval.to})`
+        );
+      }, `'${type}' interpolation of ${property} (${interval.from} -> ${interval.to})`);
+
+      test(t => {
+        // TODO: Test extrapolation at 125% and -25%
+      }, `'${type}' extrapolation of ${property} (${interval.from} -> ${interval.to})`);
+
+      test(t => {
+        // TODO: Test with an easing function that produces the 25% some point
+        // after p = 0.5.
+      }, `'${type}' interpolation of ${property} (${interval.from} -> ${interval.to}) with effect easing`);
+
+      test(t => {
+        // TODO: Test with an easing function that produces the 25% some point
+        // after p = 0.5.
+      }, `'${type}' interpolation of ${property} (${interval.from} -> ${interval.to}) with keyframe easing`);
+    }
+
+    // TODO: For discrete only add tests that we actually reflect the effect
+    // and keyframe easing?
+    //
+    // Perhaps there is some way we could re-use the 25% value but set up an
+    // easing function that means it happens > 50% of the way through the
+    // interval?
+    //
+    // Yeah, that's good. We should do that.
+  }
+}
+
+</script>
